@@ -55,20 +55,50 @@ class User(db.Model):
     def __repr__(self):
         return '<User %r>' % self.username
 
+class EmailLog(db.Model):
+    __tablename__ = 'email_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    sender = db.Column(db.String(128))
+    recipient = db.Column(db.String(256)) # Armazena a lista de e-mails como texto
+    subject = db.Column(db.String(128))
+    body = db.Column(db.Text)
+    timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<EmailLog {self.id}>'
+
 def send_simple_message(to, subject, newUser):
+    
+    email_body = f"Nome: William Kermer Romualdo\nProntuário: PT3032191\nNovo usuário cadastrado: {newUser}"
+
+    full_subject = app.config['FLASKY_MAIL_SUBJECT_PREFIX'] + ' ' + subject
+    
     print('Enviando mensagem (POST)...', flush=True)
     print('URL: ' + str(app.config['API_URL']), flush=True)
     print('api: ' + str(app.config['API_KEY']), flush=True)
     print('from: ' + str(app.config['API_FROM']), flush=True)
     print('to: ' + str(to), flush=True)
-    print('subject: ' + str(app.config['FLASKY_MAIL_SUBJECT_PREFIX']) + ' ' + subject, flush=True)
-    print('text: ' + "Nome: William Kermer Romualdo\n" + "Prontuário: PT3032191\n" + "Novo usuário cadastrado: " + newUser, flush=True)
+    print('subject: ' + full_subject, flush=True)
+    print('text: ' + email_body, flush=True)
 
-    resposta = requests.post(app.config['API_URL'], 
-                             auth=("api", app.config['API_KEY']), data={"from": app.config['API_FROM'], 
-                                                                        "to": to, 
-                                                                        "subject": app.config['FLASKY_MAIL_SUBJECT_PREFIX'] + ' ' + subject, 
-                                                                        "text": "Nome: William Kermer Romualdo\n" + "Prontuário: PT3032191\n" + "Novo usuário cadastrado: " + newUser})
+    resposta = requests.post(app.config['API_URL'],
+                             auth=("api", app.config['API_KEY']),
+                             data={"from": app.config['API_FROM'],
+                                   "to": to,
+                                   "subject": full_subject,
+                                   "text": email_body})
+    
+    if resposta:
+        log_entry = EmailLog(
+            sender=app.config['API_FROM'],
+            recipient=str(to),
+            subject=full_subject,
+            body=email_body,
+            timestamp=datetime.utcnow()
+        )
+        db.session.add(log_entry)
+        db.session.commit()
+
         
     print('Enviando mensagem (Resposta)...' + str(resposta) + ' - ' + datetime.now().strftime("%m/%d/%Y, %H:%M:%S"), flush=True)
     return resposta
@@ -129,3 +159,8 @@ def index():
                            name=session.get('name'),
                            known=session.get('known', False),
                            users=users_list)
+
+@app.route('/emailsEnviados')
+def emails():
+    email_list = EmailLog.query.order_by(EmailLog.timestamp.desc()).all()
+    return render_template('emails.html', emails=email_list)
